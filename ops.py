@@ -51,16 +51,16 @@ def deconv(x, channels, kernel=4, stride=2, padding='SAME', use_bias=True, sn=Fa
                             x_shape[2] * stride + max(kernel - stride, 0), channels]
 
         if sn:
-            # w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init,
-            #                     regularizer=weight_regularizer)
-            # x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape,
-            #                            strides=[1, stride, stride, 1], padding=padding)
+            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init,
+                                regularizer=weight_regularizer)
+            x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape,
+                                       strides=[1, stride, stride, 1], padding=padding)
 
-            w = tf.get_variable('kernel', shape=[kernel, kernel, output_shape[-1], x.get_shape()[-1]],
-                                initializer=weight_init, regularizer=weight_regularizer)
-
-            resize = tf.image.resize_bilinear(x, output_shape[1:-1])
-            x = tf.nn.conv2d(resize, w, strides=[1, 1, 1, 1], padding=padding)
+            # w = tf.get_variable('kernel', shape=[kernel, kernel, output_shape[-1], x.get_shape()[-1]],
+            #                     initializer=weight_init, regularizer=weight_regularizer)
+            #
+            # resize = tf.image.resize_bilinear(x, output_shape[1:-1])
+            # x = tf.nn.conv2d(resize, w, strides=[1, 1, 1, 1], padding=padding)
 
             if use_bias:
                 bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0))

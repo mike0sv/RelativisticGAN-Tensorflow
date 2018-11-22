@@ -1,3 +1,8 @@
+import sys
+import threading
+import time
+import traceback
+
 from RaGAN import RaGAN
 import argparse
 from utils import *
@@ -87,6 +92,20 @@ def main():
     args = parse_args()
     if args is None:
       exit()
+
+    class ThreadWatcher(threading.Thread):
+        def __init__(self, to_watch=None, timeout=.5):
+            super().__init__(daemon=True)
+            self.to_watch = to_watch or threading.current_thread()
+            self.timeout = timeout
+
+        def run(self):
+            while True:
+                traceback.print_stack(sys._current_frames()[self.to_watch.ident])
+                time.sleep(self.timeout)
+
+    t = ThreadWatcher(timeout=5)
+    t.start()
 
     # open session
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
