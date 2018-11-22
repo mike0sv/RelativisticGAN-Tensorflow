@@ -1,7 +1,6 @@
 import tensorflow as tf
 import tensorflow.contrib as tf_contrib
 
-
 # Xavier : tf_contrib.layers.xavier_initializer()
 # He : tf_contrib.layers.variance_scaling_initializer()
 # Normal : tf.random_normal_initializer(mean=0.0, stddev=0.02)
@@ -10,32 +9,32 @@ import tensorflow.contrib as tf_contrib
 weight_init = tf.random_normal_initializer(mean=0.0, stddev=0.02)
 weight_regularizer = None
 
+
 ##################################################################################
 # Layer
 ##################################################################################
 
 def conv(x, channels, kernel=4, stride=2, pad=0, pad_type='zero', use_bias=True, sn=False, scope='conv_0'):
     with tf.variable_scope(scope):
-        if pad_type == 'zero' :
+        if pad_type == 'zero':
             x = tf.pad(x, [[0, 0], [pad, pad], [pad, pad], [0, 0]])
-        if pad_type == 'reflect' :
+        if pad_type == 'reflect':
             x = tf.pad(x, [[0, 0], [pad, pad], [pad, pad], [0, 0]], mode='REFLECT')
 
-        if sn :
+        if sn:
             w = tf.get_variable("kernel", shape=[kernel, kernel, x.get_shape()[-1], channels], initializer=weight_init,
                                 regularizer=weight_regularizer)
             x = tf.nn.conv2d(input=x, filter=spectral_norm(w),
                              strides=[1, stride, stride, 1], padding='VALID')
-            if use_bias :
+            if use_bias:
                 bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0))
                 x = tf.nn.bias_add(x, bias)
 
-        else :
+        else:
             x = tf.layers.conv2d(inputs=x, filters=channels,
                                  kernel_size=kernel, kernel_initializer=weight_init,
                                  kernel_regularizer=weight_regularizer,
                                  strides=stride, use_bias=use_bias)
-
 
         return x
 
@@ -48,28 +47,39 @@ def deconv(x, channels, kernel=4, stride=2, padding='SAME', use_bias=True, sn=Fa
             output_shape = [x_shape[0], x_shape[1] * stride, x_shape[2] * stride, channels]
 
         else:
-            output_shape =[x_shape[0], x_shape[1] * stride + max(kernel - stride, 0), x_shape[2] * stride + max(kernel - stride, 0), channels]
+            output_shape = [x_shape[0], x_shape[1] * stride + max(kernel - stride, 0),
+                            x_shape[2] * stride + max(kernel - stride, 0), channels]
 
-        if sn :
-            w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init, regularizer=weight_regularizer)
-            x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape, strides=[1, stride, stride, 1], padding=padding)
+        if sn:
+            # w = tf.get_variable("kernel", shape=[kernel, kernel, channels, x.get_shape()[-1]], initializer=weight_init,
+            #                     regularizer=weight_regularizer)
+            # x = tf.nn.conv2d_transpose(x, filter=spectral_norm(w), output_shape=output_shape,
+            #                            strides=[1, stride, stride, 1], padding=padding)
 
-            if use_bias :
+            w = tf.get_variable('kernel', shape=[kernel, kernel, output_shape[-1], x.get_shape()[-1]],
+                                initializer=weight_init, regularizer=weight_regularizer)
+
+            resize = tf.image.resize_bilinear(x, output_shape[1:-1])
+            x = tf.nn.conv2d(resize, w, strides=[1, 1, 1, 1], padding=padding)
+
+            if use_bias:
                 bias = tf.get_variable("bias", [channels], initializer=tf.constant_initializer(0.0))
                 x = tf.nn.bias_add(x, bias)
 
-        else :
+        else:
             x = tf.layers.conv2d_transpose(inputs=x, filters=channels,
-                                           kernel_size=kernel, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
+                                           kernel_size=kernel, kernel_initializer=weight_init,
+                                           kernel_regularizer=weight_regularizer,
                                            strides=stride, padding=padding, use_bias=use_bias)
 
         return x
+
 
 ##################################################################################
 # Sampling
 ##################################################################################
 
-def flatten(x) :
+def flatten(x):
     return tf.layers.flatten(x)
 
 
@@ -77,6 +87,7 @@ def up_sample(x, scale_factor=2):
     _, h, w, _ = x.get_shape().as_list()
     new_size = [h * scale_factor, w * scale_factor]
     return tf.image.resize_nearest_neighbor(x, size=new_size)
+
 
 ##################################################################################
 # Activation function
@@ -93,6 +104,7 @@ def relu(x):
 def tanh(x):
     return tf.tanh(x)
 
+
 ##################################################################################
 # Normalization function
 ##################################################################################
@@ -102,6 +114,7 @@ def batch_norm(x, is_training=True, scope='batch_norm'):
                                         decay=0.9, epsilon=1e-05,
                                         center=True, scale=True, updates_collections=None,
                                         is_training=is_training, scope=scope)
+
 
 def spectral_norm(w, iteration=1):
     w_shape = w.shape.as_list()
@@ -130,8 +143,10 @@ def spectral_norm(w, iteration=1):
 
     return w_norm
 
+
 def l2_norm(v, eps=1e-12):
     return v / (tf.reduce_sum(v ** 2) ** 0.5 + eps)
+
 
 ##################################################################################
 # Loss function
@@ -141,40 +156,42 @@ def discriminator_loss(Ra, loss_func, real, fake):
     real_loss = 0
     fake_loss = 0
 
-    if Ra and loss_func.__contains__('wgan') :
+    if Ra and loss_func.__contains__('wgan'):
         print("No exist [Ra + WGAN], so use the {} loss function".format(loss_func))
         Ra = False
 
-    if Ra :
+    if Ra:
         real_logit = (real - tf.reduce_mean(fake))
         fake_logit = (fake - tf.reduce_mean(real))
 
-        if loss_func == 'lsgan' :
+        if loss_func == 'lsgan':
             real_loss = tf.reduce_mean(tf.square(real_logit - 1.0))
             fake_loss = tf.reduce_mean(tf.square(fake_logit + 1.0))
 
-        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan' :
-            real_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real), logits=real_logit))
-            fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake), logits=fake_logit))
+        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan':
+            real_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real), logits=real_logit))
+            fake_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake), logits=fake_logit))
 
-        if loss_func == 'hinge' :
+        if loss_func == 'hinge':
             real_loss = tf.reduce_mean(relu(1.0 - real_logit))
             fake_loss = tf.reduce_mean(relu(1.0 + fake_logit))
 
-    else :
-        if loss_func == 'wgan-gp' or loss_func == 'wgan-lp' :
+    else:
+        if loss_func == 'wgan-gp' or loss_func == 'wgan-lp':
             real_loss = -tf.reduce_mean(real)
             fake_loss = tf.reduce_mean(fake)
 
-        if loss_func == 'lsgan' :
+        if loss_func == 'lsgan':
             real_loss = tf.reduce_mean(tf.square(real - 1.0))
             fake_loss = tf.reduce_mean(tf.square(fake))
 
-        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan' :
+        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan':
             real_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real), logits=real))
             fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake), logits=fake))
 
-        if loss_func == 'hinge' :
+        if loss_func == 'hinge':
             real_loss = tf.reduce_mean(relu(1.0 - real))
             fake_loss = tf.reduce_mean(relu(1.0 + fake))
 
@@ -182,41 +199,44 @@ def discriminator_loss(Ra, loss_func, real, fake):
 
     return loss
 
+
 def generator_loss(Ra, loss_func, real, fake):
     fake_loss = 0
     real_loss = 0
 
-    if Ra and loss_func.__contains__('wgan') :
+    if Ra and loss_func.__contains__('wgan'):
         print("No exist [Ra + WGAN], so use the {} loss function".format(loss_func))
         Ra = False
 
-    if Ra :
+    if Ra:
         fake_logit = (fake - tf.reduce_mean(real))
         real_logit = (real - tf.reduce_mean(fake))
 
-        if loss_func == 'lsgan' :
+        if loss_func == 'lsgan':
             fake_loss = tf.reduce_mean(tf.square(fake_logit - 1.0))
             real_loss = tf.reduce_mean(tf.square(real_logit + 1.0))
 
-        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan' :
-            fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake), logits=fake_logit))
-            real_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(real), logits=real_logit))
+        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan':
+            fake_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake), logits=fake_logit))
+            real_loss = tf.reduce_mean(
+                tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(real), logits=real_logit))
 
-        if loss_func == 'hinge' :
+        if loss_func == 'hinge':
             fake_loss = tf.reduce_mean(relu(1.0 - fake_logit))
             real_loss = tf.reduce_mean(relu(1.0 + real_logit))
 
-    else :
+    else:
         if loss_func == 'wgan-gp' or loss_func == 'wgan-lp':
             fake_loss = -tf.reduce_mean(fake)
 
-        if loss_func == 'lsgan' :
+        if loss_func == 'lsgan':
             fake_loss = tf.reduce_mean(tf.square(fake - 1.0))
 
-        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan' :
+        if loss_func == 'gan' or loss_func == 'gan-gp' or loss_func == 'dragan':
             fake_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake), logits=fake))
 
-        if loss_func == 'hinge' :
+        if loss_func == 'hinge':
             fake_loss = -tf.reduce_mean(fake)
 
     loss = fake_loss + real_loss
