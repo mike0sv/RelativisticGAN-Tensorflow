@@ -18,7 +18,7 @@ class RaGAN(object):
         self.print_freq = args.print_freq
         self.save_freq = args.save_freq
         self.img_size = args.img_size
-
+        self.gen_dis_ratio = args.gen_dis_ratio
         """ Generator """
         self.layer_num = int(np.log2(self.img_size)) - 3 # if 128x128 -> 4 layer
         self.z_dim = args.z_dim  # dimension of noise-vector
@@ -301,23 +301,31 @@ class RaGAN(object):
                         self.z : batch_z
                     }
 
-                # update D network
-                _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss], feed_dict=train_feed_dict)
-                self.writer.add_summary(summary_str, counter)
 
-                # update G network
+
+                d_loss = None
                 g_loss = None
-                if (counter - 1) % self.n_critic == 0:
+                if np.random.random() > self.gen_dis_ratio:
+                    # update D network
+                    _, summary_str, d_loss = self.sess.run([self.d_optim, self.d_sum, self.d_loss], feed_dict=train_feed_dict)
+                    self.writer.add_summary(summary_str, counter)
+                    past_d_loss = d_loss
+                    updated = 'D'
+                else:
+                    # update G network
                     _, summary_str, g_loss = self.sess.run([self.g_optim, self.g_sum, self.g_loss], feed_dict=train_feed_dict)
                     self.writer.add_summary(summary_str, counter)
                     past_g_loss = g_loss
+                    updated = 'G'
 
                 # display training status
                 counter += 1
                 if g_loss == None :
                     g_loss = past_g_loss
-                print("Epoch: [%2d] [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
-                      % (epoch, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
+                if d_loss == None:
+                    d_loss = past_d_loss
+                print("Epoch: [%2d] %s [%5d/%5d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
+                      % (epoch, updated, idx, self.iteration, time.time() - start_time, d_loss, g_loss))
 
                 # save training results for every 300 steps
                 if np.mod(idx+1, self.print_freq) == 0:
